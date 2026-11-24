@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>倾转过渡的系统安全分析：从 FHA 到倾转机构失效</title>
+<style>
+  :root{
+    --bg:#0a0e17; --panel:#111827; --panel-2:#151f32; --line:#1f2b3d;
+    --text:#e5e7eb; --muted:#94a3b8; --accent:#3b82f6; --accent-2:#22d3ee;
+    --warn:#f59e0b; --ok:#10b981; --red:#ef4444;
+    --radius:14px; --nav-w:260px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif;
+    background:var(--bg);color:var(--text);line-height:1.8;-webkit-font-smoothing:antialiased;
+  }
+  .sidenav{
+    position:fixed;top:0;left:0;bottom:0;width:var(--nav-w);
+    background:linear-gradient(180deg,#0d1420 0%,#0a0e17 100%);
+    border-right:1px solid var(--line);padding:32px 20px;overflow-y:auto;z-index:100;
+  }
+  .sidenav .brand{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-2);font-weight:600;margin-bottom:4px}
+  .sidenav .sub{font-size:12px;color:var(--muted);margin-bottom:28px}
+  .sidenav a{display:block;color:var(--muted);text-decoration:none;font-size:13.5px;padding:9px 12px;border-radius:8px;margin-bottom:3px;transition:.2s;border-left:2px solid transparent}
+  .sidenav a:hover,.sidenav a.active{color:#fff;background:rgba(59,130,246,.1);border-left-color:var(--accent)}
+  .sidenav .tag{display:inline-block;font-size:10px;padding:3px 9px;border-radius:999px;background:rgba(34,211,238,.1);color:var(--accent-2);margin-top:20px;line-height:1.5}
+  .main{margin-left:var(--nav-w);padding:64px 72px 140px;max-width:1320px}
+  section{margin-bottom:80px;scroll-margin-top:32px}
+  h1{font-size:clamp(28px,4vw,46px);line-height:1.18;letter-spacing:-.025em;margin-bottom:16px}
+  h1 em{font-style:normal;color:var(--accent-2)}
+  .hero-sub{color:var(--muted);font-size:17px;max-width:880px;margin-bottom:10px}
+  .meta-line{font-size:13px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap;margin-top:18px}
+  .meta-line b{color:var(--text)}
+  h2{font-size:24px;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+  h2::before{content:"";width:4px;height:22px;background:var(--accent);border-radius:2px;display:inline-block}
+  .sec-desc{color:var(--muted);font-size:14.5px;margin-bottom:28px;max-width:960px}
+  .grid{display:grid;gap:16px}
+  .g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:1100px){.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:1fr 1fr}}
+  @media(max-width:780px){.g4,.g3,.g2{grid-template-columns:1fr}.main{margin-left:0;padding:36px 20px}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px 22px 20px;transition:.25s}
+  .card:hover{border-color:#2d4a6b;transform:translateY(-2px)}
+  .card .k{font-size:11.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
+  .card .v{font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.25}
+  .card .v small{font-size:12.5px;font-weight:400;color:var(--muted);margin-left:3px}
+  .card .d{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.6}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;letter-spacing:.04em}
+  .pill.warn{background:rgba(245,158,11,.14);color:var(--warn)}
+  .pill.ok{background:rgba(16,185,129,.14);color:var(--ok)}
+  .pill.blue{background:rgba(59,130,246,.14);color:#60a5fa}
+  .pill.red{background:rgba(239,68,68,.14);color:#f87171}
+  .matrix{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:20px}
+  .matrix th,.matrix td{border:1px solid var(--line);padding:13px 15px;text-align:left;vertical-align:top;line-height:1.7}
+  .matrix th{background:var(--panel-2);color:var(--muted);font-weight:600;font-size:12px;letter-spacing:.04em}
+  .matrix tr:hover td{background:rgba(59,130,246,.035)}
+  .matrix td strong{color:#fff}
+  .svg-box{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:28px 24px 20px;margin-top:22px;overflow-x:auto}
+  .svg-box svg{display:block;margin:0 auto;max-width:100%;height:auto}
+  .svg-caption{font-size:12px;color:var(--muted);text-align:center;margin-top:14px;line-height:1.6}
+  .timeline{position:relative;padding-left:30px;margin-top:28px}
+  .timeline::before{content:"";position:absolute;left:7px;top:8px;bottom:8px;width:2px;background:linear-gradient(180deg,var(--accent),var(--accent-2),rgba(34,211,238,.1))}
+  .tl-item{position:relative;margin-bottom:30px}
+  .tl-item::before{content:"";position:absolute;left:-29px;top:7px;width:12px;height:12px;border-radius:50%;background:var(--bg);border:2.5px solid var(--accent)}
+  .tl-item .date{font-size:12px;color:var(--accent-2);font-weight:600;letter-spacing:.06em}
+  .tl-item h4{font-size:15.5px;margin:4px 0 4px;font-weight:600}
+  .tl-item p{font-size:13.5px;color:var(--muted)}
+  .ref-list{list-style:none;counter-reset:ref;margin-top:16px}
+  .ref-list li{counter-increment:ref;position:relative;padding:14px 16px 14px 54px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;font-size:13px;color:var(--muted);background:var(--panel);line-height:1.75}
+  .ref-list li::before{content:"[" counter(ref) "]";position:absolute;left:14px;top:14px;color:var(--accent-2);font-weight:700;font-size:13px}
+  .ref-list li a{color:#60a5fa;text-decoration:none;word-break:break-all}
+  .ref-list li a:hover{text-decoration:underline}
+  .callout{background:rgba(34,211,238,.06);border:1px solid rgba(34,211,238,.2);border-radius:var(--radius);padding:18px 22px;font-size:14px;color:#a5f3fc;margin-top:20px;line-height:1.75}
+  .callout strong{color:#fff}
+  .callout.warn{background:rgba(245,158,11,.07);border-color:rgba(245,158,11,.25);color:#fcd34d}
+  .callout.warn strong{color:#fff}
+  footer{border-top:1px solid var(--line);padding:36px 0 0;font-size:12.5px;color:var(--muted);margin-top:48px;line-height:1.8}
+</style>
+</head>
+<body>
+
+<nav class="sidenav">
+  <div class="brand">Flying Vehicle Safety</div>
+  <div class="sub">倾转过渡 · 系统安全分析</div>
+  <a href="#overview" class="active">00 分析对象与安全边界</a>
+  <a href="#fha">01 功能危害评估（FHA）</a>
+  <a href="#failure">02 倾转机构失效实证</a>
+  <a href="#corridor">03 过渡走廊的动态安全边界</a>
+  <a href="#method">04 ARP4761A 与 MBSA 方法</a>
+  <a href="#refs">05 参考文献</a>
+  <span class="tag">基于公开适航框架与 NTSB 调查 · 不构成适航结论</span>
+</nav>
+
+<main class="main">
+
+  <!-- 00 -->
+  <section id="overview">
+    <h1>倾转过渡的系统安全分析：<br><em>当“效率最优”撞上“失效最致命”</em></h1>
+    <p class="hero-sub">
+      本次安全分析把问题推到系统层面：<strong>在过渡走廊这个容错空间最窄的飞行阶段，哪些功能的丧失会直接跨入灾难性等级？倾转机构的单点失效在真实事故中呈现出怎样的级联路径？</strong>系统安全工程的任务，不是在事故之后写报告，而是在架构设计阶段就把“不可接受的失效”识别出来，并用可验证的方式证明它被控制住了。
+    </p>
+    <div class="meta-line">
+      <span>分析对象：<b>eVTOL 倾转过渡阶段（倾转机构、飞控模式切换、动力冗余）</b></span>
+      <span>方法：<b>FHA + 失效路径分析 + 动态过渡走廊 + ARP4761A/MBSA</b></span>
+      <span>实证锚点：<b>NTSB DCA22FA082（Joby JAS4-2 倾转机构连杆失效）</b></span>
+    </div>
+
+    <div class="grid g4" style="margin-top:36px">
+      <div class="card">
+        <div class="k">安全关键阶段</div>
+        <div class="v" style="font-size:20px;color:var(--accent-2)">过渡走廊</div>
+        <div class="d">构型剧烈变化、气动强非线性、分布式电推进耦合，容错余度显著收窄</div>
+      </div>
+      <div class="card">
+        <div class="k">灾难性功能丧失</div>
+        <div class="v" style="font-size:20px;color:var(--red)">动力传递丧失 / 航迹控制丧失</div>
+        <div class="d">FHA 中必须被归类为 Catastrophic 的功能危害</div>
+      </div>
+      <div class="card">
+        <div class="k">真实失效路径</div>
+        <div class="v" style="font-size:20px;color:var(--warn)">倾转作动器连杆 → 桨叶角异常 → 级联分离</div>
+        <div class="d">NTSB 对 Joby JAS4-2 事故的正式 probable cause</div>
+      </div>
+      <div class="card">
+        <div class="k">安全目标</div>
+        <div class="v" style="font-size:20px;color:var(--ok)">单点失效不得导致灾难性事故</div>
+        <div class="d">EASA MOC VTOL.2250(c) 对增强类 VTOL 的明确要求</div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>安全分析的核心判断：</strong>倾转过渡的安全问题不能简化为“机构是否可靠”。它是一个<strong>功能危害在时间窗口内叠加</strong>的问题：倾转机构在过渡段承受的载荷与在巡航段不同，飞控模式切换期间的操纵权限分配存在瞬态，动力单元失效的后果取决于它发生在倾转角的哪个区间。系统安全工程的价值，在于把这些“位置依赖”和“时序依赖”的失效场景，转化为可设计、可验证的安全性需求。
+    </div>
+  </section>
+
+  <!-- 01 -->
+  <section id="fha">
+    <h2>01 功能危害评估（FHA）：过渡段哪些功能丧失不可接受</h2>
+    <p class="sec-desc">
+      FHA 是系统安全工程的起点：自顶向下识别飞机级功能，评估每一种功能丧失或异常对飞行安全的影响等级。对于倾转过渡而言，FHA 的难点不在于“列出功能”，而在于<strong>同一种功能失效在悬停、过渡、巡航三个阶段的危害等级并不相同</strong>。NASA 在 eVTOL FHA 的探索性演示中明确指出，过渡状态下的失效模式分析需要跨状态展开，而不能套用单一飞行阶段的结论[reference:0][reference:1]。
+    </p>
+
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th style="width:18%">飞机级功能</th>
+          <th style="width:24%">过渡段的失效表现</th>
+          <th style="width:20%">FHA 危害等级（过渡段）</th>
+          <th style="width:38%">安全需求指向</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>提供推力/升力</strong></td>
+          <td>单旋翼失效、推力不对称、倾转角度指令与实际角度不一致</td>
+          <td><span class="pill red">灾难性 / 危险性</span></td>
+          <td>任一动力单元失效必须具备可控处置方案；倾转机构需证明在载荷谱下的结构稳定性与角度精度[reference:2]</td>
+        </tr>
+        <tr>
+          <td><strong>控制飞行航迹</strong></td>
+          <td>模式切换期间操纵权限分配瞬态、气动模型不确定性下的控制律饱和</td>
+          <td><span class="pill red">灾难性</span></td>
+          <td>飞控需在过渡走廊内具备包线保护能力；FHA 应将“航迹控制丧失”明确归类为 Catastrophic[reference:3]</td>
+        </tr>
+        <tr>
+          <td><strong>维持结构完整性</strong></td>
+          <td>倾转作动器连杆异常载荷、桨叶根部弯曲失效、级联分离</td>
+          <td><span class="pill red">灾难性</span></td>
+          <td>倾转机构需纳入结构完整性监控；NTSB 案例表明连杆异常行为可在无直接指令故障的情况下引发级联[reference:4]</td>
+        </tr>
+        <tr>
+          <td><strong>提供姿态信息与告警</strong></td>
+          <td>过渡段姿态变化快，传感器噪声/失效导致飞行员或飞控误判</td>
+          <td><span class="pill warn">危险性</span></td>
+          <td>需保证过渡阶段的姿态信息完整性，并具备失效告警能力，支持纠正动作[reference:5]</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout warn" style="margin-top:22px">
+      <strong>FHA 的关键约束：</strong>EASA SC-VTOL-01 对增强类 VTOL 提出了比 CS-23 更高的安全性目标，并明确<strong>单点失效不得引起灾难性事故</strong>。这意味着倾转机构中任何被识别为“单点”的元件，都不能仅仅靠“概率很低”来论证可接受性，而必须有架构层面的冗余或等效安全措施[reference:6][reference:7]。
+    </div>
+  </section>
+
+  <!-- 02 -->
+  <section id="failure">
+    <h2>02 倾转机构失效的实证：NTSB 对 Joby JAS4-2 的结论</h2>
+    <p class="sec-desc">
+      系统安全分析最忌讳停留在理论推演。2022 年 2 月 16 日，Joby JAS4-2 原型机（N542AJ）在包线扩展试飞中发生事故，NTSB 的最终报告为倾转机构的安全分析提供了一个罕见的、来自正式调查的实证锚点。该事故无人伤亡，但飞机损毁，其失效路径直接指向了本文分析的核心对象——<strong>倾转作动器连杆的异常行为如何引发跨系统的级联失效</strong>。
+    </p>
+
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="date">事故经过</div>
+        <h4>包线扩展试飞中的桨叶分离</h4>
+        <p>飞机在约 8,900 英尺高度达到 181 节指示空速后，3 号推进站（右翼内侧）的一根螺旋桨叶片在根部附近发生弯曲失效并分离。分离的叶片撞击 4 号推进站（右翼外侧）的螺旋桨，引发级联效应，最终导致多个推进电机/螺旋桨组件分离，飞机失去遥控驾驶员的控制并坠地[reference:8][reference:9]。</p>
+      </div>
+      <div class="tl-item">
+        <div class="date">NTSB probable cause</div>
+        <h4>倾转作动器连杆使桨叶角大于指令值</h4>
+        <p>NTSB 认定的可能原因中，明确写入：“Contributing to the accident was the tilt rotor actuator linkage for propulsion station 3 that allowed some propeller blades to be at a steeper angle than commanded.”——3 号站的倾转作动器连杆使部分桨叶处于比指令更陡的角度[reference:10][reference:11]。</p>
+      </div>
+      <div class="tl-item">
+        <div class="date">安全分析的关键发现</div>
+        <h4>不对称行为在事故前已持续存在</h4>
+        <p>Joby 对既往试飞数据的复查显示，2 号站与 3 号站之间存在“consistent asymmetric behaviour”，尽管两者设计完全镜像；3 号站的倾转作动器在所有飞行条件下的活动量都高于 2 号站，连杆载荷也更高，NTSB 指出这“可能是倾转机构异常行为的指示”。此外，事故前 3 号站的倾转作动器位置出现振荡，加速度计数据显示振动在桨叶分离前快速增大[reference:12]。</p>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <strong>对安全分析方法的启示：</strong>这起事故不是“某个元件突然坏了”的简单失效，而是一个<strong>在多次飞行中已经留下可观测征兆、但尚未被安全监控体系有效拦截的渐进异常</strong>。倾转作动器连杆的异常载荷和不对称活动，本质上属于“功能性能退化”而非“硬失效”。这对 ARP4761A 框架下的安全评估提出了一个具体挑战：如果失效在早期表现为性能偏移而非离散故障，传统的二元失效假设是否足以覆盖倾转过渡的风险？
+    </div>
+  </section>
+
+  <!-- 03 -->
+  <section id="corridor">
+    <h2>03 过渡走廊的动态安全边界：静态走廊为什么不够</h2>
+    <p class="sec-desc">
+      倾转过渡的安全分析不能脱离飞行包线。传统过渡走廊通常通过求解不同倾转角下的稳态平飞速度区间来确定（静态过渡走廊），但这一方法隐含了一个危险假设：飞行器可以在各倾转角之间“瞬时平衡”。真实过渡过程中，构型与速度同步变化，加速度、爬升率、阵风扰动都会使安全边界收缩。南京航空航天大学的研究表明，在加速斜爬升的特定状态下，<strong>动态过渡走廊面积相较静态走廊减少约 52%</strong>，仅依赖静态走廊设计路径可能直接导致功率超限和机翼失速[reference:13]。
+    </p>
+
+    <div class="svg-box">
+      <svg viewBox="0 0 760 360" width="760" height="360" role="img" aria-label="静态过渡走廊与动态安全边界收缩示意">
+        <defs>
+          <marker id="arS" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6" fill="none" stroke="#22d3ee" stroke-width="1.6"/>
+          </marker>
+        </defs>
+        <rect x="0" y="0" width="760" height="360" fill="#111827" rx="12"/>
+        <text x="380" y="30" fill="#94a3b8" font-size="13" text-anchor="middle" letter-spacing="2">过渡走廊的安全边界：静态包线 vs. 动态收缩（概念示意）</text>
+
+        <line x1="80" y1="290" x2="700" y2="290" stroke="#1f2b3d" stroke-width="2"/>
+        <line x1="80" y1="290" x2="80" y2="60" stroke="#1f2b3d" stroke-width="2"/>
+        <text x="390" y="324" fill="#475569" font-size="11" text-anchor="middle">飞行速度 →</text>
+        <text x="44" y="175" fill="#475569" font-size="11" text-anchor="middle" transform="rotate(-90 44 175)">倾转角 →</text>
+
+        <!-- 静态走廊：宽 -->
+        <path d="M120,95 C260,90 420,105 650,150 L650,235 C420,250 260,245 120,225 Z"
+              fill="rgba(34,211,238,.07)" stroke="rgba(34,211,238,.45)" stroke-width="1.8" stroke-dasharray="6 3"/>
+        <text x="610" y="130" fill="#22d3ee" font-size="11" text-anchor="end">静态过渡走廊</text>
+
+        <!-- 动态走廊：显著收缩 -->
+        <path d="M230,130 C340,128 450,138 580,168 L580,210 C450,220 340,218 230,205 Z"
+              fill="rgba(245,158,11,.09)" stroke="rgba(245,158,11,.6)" stroke-width="2"/>
+        <text x="560" y="194" fill="#f59e0b" font-size="11" text-anchor="end">动态安全边界</text>
+
+        <!-- 收缩指示 -->
+        <line x1="150" y1="160" x2="230" y2="165" stroke="#ef4444" stroke-width="1.4" marker-end="url(#arS)" stroke-dasharray="3 2"/>
+        <line x1="620" y1="200" x2="580" y2="195" stroke="#ef4444" stroke-width="1.4" marker-end="url(#arS)" stroke-dasharray="3 2"/>
+        <text x="380" y="278" fill="#f87171" font-size="10.5" text-anchor="middle">加速斜爬升等动态状态下，安全区域可收缩约 52%</text>
+
+        <!-- 危险区标注 -->
+        <text x="140" y="82" fill="#64748b" font-size="10">仅按静态走廊设计的路径可能落入功率超限 / 机翼失速区</text>
+      </svg>
+      <div class="svg-caption">
+        静态走廊提供的是“可稳态平飞”的几何边界，而过渡飞行是一个构型与速度同步变化的动态过程。安全路径设计应以动态走廊与静态走廊的重叠区域为约束[reference:14]。
+      </div>
+    </div>
+
+    <p style="font-size:13.5px;color:var(--muted);margin-top:18px;line-height:1.8">
+      进一步的研究引入了<strong>概率过渡走廊（Probabilistic Transition Corridor, PTC）</strong>：在随机阵风扰动下，通过协方差传播评估迎角、前进比和功率约束的失效概率，从而给出概率意义上的安全边界。结果表明，湍流强度增大时概率安全区显著收缩；风险较高的区域倾向于出现在中高速过渡段，因为那里的气动耦合更强、推进需求更高[reference:15]。这意味着安全分析不能只问“这条路径是否可行”，还要问“在这条路径上，约束违反的概率是否低到可以接受”。
+    </p>
+
+    <div class="callout" style="margin-top:22px">
+      <strong>安全设计含义：</strong>过渡走廊的动态收缩和概率特性，直接改变了倾转机构与飞控的安全需求分配。如果安全边界本身随状态收缩，那么<strong>倾转机构的失效容限、飞控的保护阈值、动力冗余的功率储备</strong>都不能按单一保守包线来设计，而需要在走廊内按位置和时序分层定义。
+    </div>
+  </section>
+
+  <!-- 04 -->
+  <section id="method">
+    <h2>04 ARP4761A 与 MBSA：复杂耦合系统为何需要基于模型的评估</h2>
+    <p class="sec-desc">
+      倾转过渡的安全分析之所以困难，根源在于它不是一个可以拆成孤立子系统分别论证的问题。倾转机构、飞控模式切换、分布式电推进在过渡段形成强耦合：倾转角变化改变推力矢量，推力矢量变化改变气动力矩，气动力矩变化又反过来影响飞控对倾转机构的指令。ARP4761A 中新引入的<strong>基于模型的安全分析（MBSA）</strong>，正是为了应对这种耦合：它用组合化、模块化的方式表示故障传播路径，允许在不同构型之间复用安全分析元素，而不是每次从头构建故障树[reference:16][reference:17]。
+    </p>
+
+    <div class="grid g3">
+      <div class="card">
+        <span class="pill blue">ARP4754A</span>
+        <h3 style="font-size:17px;margin:10px 0 6px">研制保证过程</h3>
+        <p style="font-size:13.5px;color:var(--muted)">
+          从飞机级功能到系统级需求的分配与验证框架。倾转过渡的安全需求必须在这一层被追溯到具体的架构决策，而不是在系统设计完成后“补做安全”。
+        </p>
+      </div>
+      <div class="card">
+        <span class="pill warn">ARP4761 / 4761A</span>
+        <h3 style="font-size:17px;margin:10px 0 6px">安全评估方法</h3>
+        <p style="font-size:13.5px;color:var(--muted)">
+          FHA、PASA/ASA、故障树分析（FTA）等。4761A 新增的 MBSA 和级联影响分析（CEA），专门针对复杂系统中“局部故障如何沿耦合路径扩散为系统级危害”的问题[reference:18]。
+        </p>
+      </div>
+      <div class="card">
+        <span class="pill ok">STPA（补充视角）</span>
+        <h3 style="font-size:17px;margin:10px 0 6px">超越二元失效</h3>
+        <p style="font-size:13.5px;color:var(--muted)">
+          有研究指出，ARP4761 与 STPA 的结合可以把安全分析的视角从“元件是否失效”扩展到“控制行为是否不安全”，这对倾转过渡中飞控模式切换的瞬态问题尤为重要[reference:19]。
+        </p>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top:22px">
+      <strong>方法层面的结论：</strong>倾转过渡的安全分析不能止于 FHA 表格。它需要一条完整的证据链：<strong>FHA 识别灾难性功能危害 → 架构分配安全需求 → MBSA/CEA 分析耦合失效路径 → 动态过渡走廊定义验证包线 → 试飞数据（包括异常征兆）反向校核安全假设</strong>。Joby 事故中“事故前已存在不对称行为”这一事实，恰恰说明这条证据链如果缺少对渐进异常的持续监控，就会留下缺口。
+    </div>
+  </section>
+
+  <!-- 05 -->
+  <section id="refs">
+    <h2>05 参考文献</h2>
+    <p class="sec-desc">
+      以下来源均为公开可访问的正式调查报告、适航文件、学术论文或行业分析，按页面中首次出现的事实对应列出。
+    </p>
+
+    <ol class="ref-list">
+      <li>
+        National Transportation Safety Board. <em>NTSB Accident Report DCA22FA082 — Joby Aero Inc JAS4-2, N542AJ</em>. 2022-02-16（报告公开于 2024 年）.
+        <a href="https://aviatordb.com/ntsb/20220217104654" target="_blank" rel="noopener">aviatordb.com/ntsb/20220217104654</a>
+        <span style="display:block;margin-top:4px;color:#64748b;">用于：Joby JAS4-2 事故的 probable cause、倾转作动器连杆使桨叶角大于指令值、桨叶分离与级联效应、2 号与 3 号站的不对称行为、倾转作动器位置振荡与振动增长。</span>
+      </li>
+      <li>
+        eVTOL Insights. <em>NTSB Finally Releases Report on Joby Aviation Crash JAS4-2 Prototype</em>. 2024-02-13.
+        <a href="https://evtolinsights.com/ntsb-finally-releases-report-on-joby-aviation-crash-jas4-2-prototype/" target="_blank" rel="noopener">evtolinsights.com/…/ntsb-finally-releases-report-on-joby-aviation-crash-jas4-2-prototype/</a>
+        <span style="display:block;margin-top:4px;color:#64748b;">用于：事故时序、181 节 / 8,900 英尺、桨叶根部弯曲失效、连杆载荷更高“可能是倾转机构异常行为的指示”、不对称行为在既往数据中已存在。</span>
+      </li>
+      <li>
+        航天新闻网（SpaceNews 中文版）. 《eVTOL完成转换飞行试验 倾转机构可靠性受关注》. 2026-11-06.
+        <a href="https://spacenews.com.cn/article/1106-business-41" target="_blank" rel="noopener">spacenews.com.cn/article/1106-business-41</a>
+        <span style="display:block;margin-top:4px;color:#64748b;">用于：转换飞行阶段姿态变化快、控制耦合强、倾转机构需在不同角度下保持结构稳定、飞控平滑过渡、任一动力单元失效须具备可控处置方案、适航审定关注重复性与可验证性。</span>
+      </li>
+      <li>
+        Wasson, K., Neogi, N., Graydon, M., Maddalon, J., Miner, P., & McCormick, G. F. <em>Functional Hazard Assessment for the eVTOL Aircraft Supporting Urban Air Mobility (UAM) Applications: Exploratory Demonstrations</em>. NASA/TM–20210024234, 2022-04.
+        <a href="https://ntrs.nasa.gov/api/citations/20210024234/downloads/NASA-TM-20210024234.pdf" target="_blank" rel="noopener">ntrs.nasa.gov/api/citations/20210024234/downloads/NASA-TM-20210024234.pdf</a>
+        <span style="display:block;margin-top:4px;color:#64748b;">用于：eVTOL FHA 的探索性演示、跨过渡状态展开失效模式分析、eVTOL 系统特有的安全考虑。</span>
+      </li>
+      <li>
+        Aerohome. 《FHA谈VTOL飞控系统的安全性评估》.
+        <a href="https://www.aerohome.com.cn/hangjiahao/8307.html" target="_blank" rel="noopener">aerohome.com.cn/hangjiahao/8307.html</a>
+        <span style="display:block;margin-top:4px;color:#64748b;">用于：ARP4754A / ARP4761 安全性评估框架、EASA SC-VTOL-01 与 MOC VTOL.2250(c) 单点失效不得引起增强类 VTOL 灾难性事故、ARP4761A 新增 MBSA/CEA、NASA TM 的 FHA 参考价值。</span>
+      </li>
+      <li>
+        Korean Society for Aeronautical and Space Sciences. <em>EASA eVTOL 안전성 목표(≤10⁻⁹) 충족성 확인 방법</em>.
+        <a href="https://koreascience.kr" target="_blank" rel="noopener">koreascience.kr</a>
+        <span style="display:block;margin-top:4px;color:#64748b;">用于：FHA 中将“动力传递丧失（Loss of power transmission）”与“航迹控制丧失（Loss of flight path control）”归类为 Catastrophic 严重度[reference:20]。</span>
+      </li>
+      <li>
+        AIAA SciTech Forum. <em>Impact of Failure on the Tilt-Wing eVTOL Backward Transition</em>. AIAA 2025-2699, 2025-01-03.
+        <a href="https://arc.aiaa.org/doi/10.2514/6.2025-2699" target="_blank" rel="noopener">arc.aiaa.org/doi/10.2514/6.2025-2699</a>
+        <span style="display:block;margin-top:4px;color:#64748b;">用于：倾转翼从巡航到悬停的反向过渡是安全着陆的关键机动、低推力设置下机翼状态接近或越过流动分离、单点与组合失效的容错评估、部分失效导致过渡轨迹不可行。</span>
+      </li>
+      <li>
+        王梓旭, 李攀, 沈俊彪, 朱振华, 陈仁良. 《加/减速状态下倾转旋翼飞行器动态过渡走廊》. <em>航空学报</em>, 2025, 46(11): 531377.
+        <a href="https://hkxb.buaa.edu.cn/CN/Y2025/V46/I11/531377" target="_blank" rel="noopener">hkxb.buaa.edu.cn/CN/Y2025/V46/I11/531377</a>
+        <span style="display:block;margin-top:4px;color:#64748b;">用于：静态过渡走廊的局限、动态过渡走廊在加速斜爬升状态下面积收缩约 52%、仅依赖静态走廊可能导致功率超限与机翼失速、建议以动态与静态走廊重叠区作为安全边界。</span>
+      </li>
+      <li>
+        <em>Probabilistic Transition Corridor for tilt-quadrotor aircraft under stochastic gust disturbances</em>. <em>Probabilistic Engineering Mechanics</em>（ScienceDirect）, 2026.
+        <a href="https://www.sciencedirect.com/science/article/abs/pii/S0266892026001803" target="_blank" rel="noopener">sciencedirect.com/science/article/abs/pii/S0266892026001803</a>
+        <span style="display:block;margin-top:4px;color:#64748b;">用于：概率过渡走廊（PTC）、随机阵风下的约束失效概率、湍流强度收缩概率安全区、中高速过渡段风险更高、为可靠性导向的走廊设计与安全评估提供定量基础。</span>
+      </li>
+      <li>
+        SAE International. <em>EVTOL Flight Control System Safety: An Example of Application Using MBSA</em>. SAE 2023-01-7105, 2023.
+        <a href="https://d.wanfangdata.com.cn/conference/CiFDb25mZXJlbmNlTmV3U29scjlTMjAyNjA3MTAwMTI1MTgSIDY4ODEyOTgyNWU1OGZkYjAyM2Q3YzkwOWE3YWFhZTg5GghwM2tseXg1cw%3D%3D" target="_blank" rel="noopener">d.wanfangdata.com.cn（SAE 2023-01-7105）</a>
+        <span style="display:block;margin-top:4px;color:#64748b;">用于：MBSA 在 ARP4761A 中的引入、组合化与模块化的故障传播路径表示、跨架构复用安全分析元素。</span>
+      </li>
+      <li>
+        TRID / SAE ARP4754A 与 STPA 结合的安全架构设计研究. <em>Safe Architecture Design of Flight Control System for eVTOL</em>. 2023-12-31.
+        <a href="https://trid.trb.org" target="_blank" rel="noopener">trid.trb.org</a>
+        <span style="display:block;margin-top:4px;color:#64748b;">用于：ARP4761 与 STPA 结合可将安全分析视角扩展到潜在不安全控制行为，弥补仅用 ARP4761 的局限。</span>
+      </li>
+    </ol>
+
+    <div class="callout" style="margin-top:24px">
+      <strong>证据边界说明：</strong>本页面将 NTSB 对 Joby JAS4-2 的调查结论定位为<strong>倾转机构失效路径的实证案例</strong>，而非对任何在研型号安全性的整体判断。Joby 事故发生在包线扩展试飞条件下，其具体失效模式不应被直接外推到常规运行场景。页面中关于“动态过渡走廊收缩约 52%”的量化结论来自特定构型与飞行状态下的仿真研究，不构成普适的设计准则。所有安全需求与适航判断均以公开的 FHA 文献和适航框架文本为依据，不替代型号审定中的正式安全性评估。
+    </div>
+  </section>
+
+  <footer>
+    飞行汽车技术基础 | eVTOL 倾转过渡的系统安全分析<br>
+    方法：FHA + 失效路径分析 + 动态过渡走廊 + ARP4761A/MBSA · 实证锚点：NTSB DCA22FA082 · 不构成适航结论或投资建议。
+  </footer>
+
+</main>
+
+<script>
+  const links = document.querySelectorAll('.sidenav a');
+  const sections = [...links].map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const active = document.querySelector(`.sidenav a[href="#${entry.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  sections.forEach(s => io.observe(s));
+</script>
+
+</body>
+</html>
